@@ -9,11 +9,15 @@
 #include "imx_rt1060.h"
 #include "../i2c_driver.h"
 
-// A read or write buffer.
-// You cannot use the same buffer for both reading and writing.
-// This class is an implementation detail of the driver and
-// should not be used elsewhere.
-class CommandBuffer {
+//This is an abstract class. Functions which want to use the callback feature must be a child of this class and overide the 'I2CCallback' function.
+
+class I2CCallbackClass {
+ public:
+    virtual void I2CCallback(I2CBuffer& readBuffer) = 0;
+}
+
+
+class I2CBuffer {
 public:
     CommandBuffer() = default;
     
@@ -23,135 +27,137 @@ public:
     // May be called inside or outside the ISR.
     // This should be safe because it can never be called while
     // the ISR is trying to read from the buffer or write to it.
-    inline void initialise(size_t new_size) {
+    inline void initialize(size_t new_size) {
         reset();
         size = new_size;
-    }
-
-    inline bool initialised() {
-        return size > 0;
+        read_index = 0;
+        write_index = 0;
     }
 
     // Empties the buffer.
     inline void reset() {
-        next_index = 0;
+        read_index = 0;
+        write_index = 0;
     }
 
+    //Write
+    
     // Returns 'false' if the buffer was already full.
     inline bool write(uint8_t data) {
-        if (next_index == size) {
+        if (write_index == size) {
             return false;
         } else {
-            buffer[next_index++] = data;
+            buffer[write_index++] = data;
             return true;
         }
     }
 
-    inline size_t get_bytes_transferred() {
-        return next_index;
+    inline size_t get_bytes_written() {
+        return write_index;
     }
-
-    // Caller is responsible for preventing a read beyond the end of the buffer.
-    inline uint8_t read() {
-        return buffer[next_index++];
+    
+    inline size_t write_bytes_remaining() {
+        return size - write_index;
     }
-
-    inline bool not_started_writing() {
-        return next_index == 0;
-    }
-
+    
     inline bool finished_writing() {
-        return next_index == size;
+        return write_index == size;
     }
 
-    inline bool not_started_reading() {
-        return next_index == 0;
-    }
-
-    inline bool finished_reading() {
-        return next_index == size;
-    }
-
-    inline bool has_data_available() {
-        return next_index < size;
-    }
-
-private:
-    volatile uint8_t buffer[256];
-    volatile size_t size = 0;
-    volatile size_t next_index = 0;
-};
-
-// A read or write buffer.
-// You cannot use the same buffer for both reading and writing.
-// This class is an implementation detail of the driver and
-// should not be used elsewhere.
-class I2CBuffer {
-public:
-    I2CBuffer();
-
-    // May be called inside or outside the ISR.
-    // This should be safe because it can never be called while
-    // the ISR is trying to read from the buffer or write to it.
-    inline void initialise(uint8_t* new_buffer, size_t new_size) {
-        reset();
-        buffer = new_buffer;
-        size = new_size;
-    }
-
-    inline bool initialised() {
-        return size > 0;
-    }
-
-    // Empties the buffer.
-    inline void reset() {
-        next_index = 0;
-    }
-
-    // Returns 'false' if the buffer was already full.
-    inline bool write(uint8_t data) {
-        if (next_index == size) {
-            return false;
-        } else {
-            buffer[next_index++] = data;
-            return true;
+    //Read
+    // Caller is responsible for preventing a read beyond the end of the buffer.
+    inline uint16_t read() {
+        if (read_index == size) {
+            return 0;
         }
+        return buffer[read_index++];
     }
 
-    inline size_t get_bytes_transferred() {
-        return next_index;
-    }
-
-    // Caller is responsible for preventing a read beyond the end of the buffer.
-    inline uint8_t read() {
-        return buffer[next_index++];
-    }
-
-    inline bool not_started_writing() {
-        return next_index == 0;
-    }
-
-    inline bool finished_writing() {
-        return next_index == size;
-    }
-
-    inline bool not_started_reading() {
-        return next_index == 0;
+    inline size_t get_bytes_read() {
+        return write_index;
     }
 
     inline bool finished_reading() {
-        return next_index == size;
-    }
-
-    inline bool has_data_available() {
-        return next_index < size;
+        return read_index == size;
     }
 
 private:
-    volatile uint8_t* buffer;
+    volatile uint16_t buffer[256];
     volatile size_t size = 0;
-    volatile size_t next_index = 0;
+    volatile size_t read_index = 0;
+    volatile size_t write_index = 0;
 };
+
+//// A read or write buffer.
+//// You cannot use the same buffer for both reading and writing.
+//// This class is an implementation detail of the driver and
+//// should not be used elsewhere.
+//class I2CBuffer {
+//public:
+//    I2CBuffer();
+//
+//    // May be called inside or outside the ISR.
+//    // This should be safe because it can never be called while
+//    // the ISR is trying to read from the buffer or write to it.
+//    inline void initialise(uint8_t* new_buffer, size_t new_size) {
+//        reset();
+//        buffer = new_buffer;
+//        size = new_size;
+//    }
+//
+//    inline bool initialised() {
+//        return size > 0;
+//    }
+//
+//    // Empties the buffer.
+//    inline void reset() {
+//        next_index = 0;
+//    }
+//
+//    // Returns 'false' if the buffer was already full.
+//    inline bool write(uint8_t data) {
+//        if (next_index == size) {
+//            return false;
+//        } else {
+//            buffer[next_index++] = data;
+//            return true;
+//        }
+//    }
+//
+//    inline size_t get_bytes_transferred() {
+//        return next_index;
+//    }
+//
+//    // Caller is responsible for preventing a read beyond the end of the buffer.
+//    inline uint8_t read() {
+//        return buffer[next_index++];
+//    }
+//
+//    inline bool not_started_writing() {
+//        return next_index == 0;
+//    }
+//
+//    inline bool finished_writing() {
+//        return next_index == size;
+//    }
+//
+//    inline bool not_started_reading() {
+//        return next_index == 0;
+//    }
+//
+//    inline bool finished_reading() {
+//        return next_index == size;
+//    }
+//
+//    inline bool has_data_available() {
+//        return next_index < size;
+//    }
+//
+//private:
+//    volatile uint8_t* buffer;
+//    volatile size_t size = 0;
+//    volatile size_t next_index = 0;
+//};
 
 class IMX_RT1060_I2CBase {
 public:
@@ -211,24 +217,33 @@ public:
 private:
     enum class State {
         // Busy states
-        starting = 0,       // Waiting for START to be sent and acknowledged
-        transferring,       // In a transfer
-        stopping,           // Transfer complete or aborted. Waiting for STOP.
-        transfer_complete,  // Transfer has finished and caller has not requested a STOP.
+        initialized = 0,
+        loading,       // Waiting for START to be sent and acknowledge
+        active,
+        callback,
+        stopping,
+        dataInBuffer,
+        error,       // In a transfer
+        //stopping,           // Transfer complete or aborted. Waiting for STOP.
+        //transfer_complete,  // Transfer has finished and caller has not requested a STOP.
 
         // 'idle' and above mean that the driver has finished
         // whatever it was doing and is ready to do more work.
-        idle = 100,         // Not in a transaction
-        stopped             // Transaction has finished. STOP sent.
+        idle = 100         // Not in a transaction
     };
 
+    I2CBuffer commandBuffer;
+    I2CBuffer readBuffer;
+
+    I2CCallbackClass * callback_ptr = nullptr;
+    
     IMXRT_LPI2C_Registers* const port;
     IMX_RT1060_I2CBase::Config& config;
     I2CBuffer buff = I2CBuffer();
     volatile State state = State::idle;
-    volatile uint32_t ignore_tdf = false;          // True for a receivve transfer
-    volatile bool stop_on_completion = false;   // True if the transmit transfer requires a stop.
-    std::function<void(size_t length)> after_receive_callback = nullptr;
+    //volatile uint32_t ignore_tdf = false;          // True for a receivve transfer
+    //volatile bool stop_on_completion = false;   // True if the transmit transfer requires a stop.
+    //std::function<void(size_t length)> after_receive_callback = nullptr;
         
     void (* isr)();
     void set_clock(uint32_t frequency);
