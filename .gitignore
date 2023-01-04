@@ -1,4 +1,2 @@
-.idea
-.pio
-cmake-build-teensy40
-CMakeListsPrivate.txt
+.gitignore
+.DS_Store

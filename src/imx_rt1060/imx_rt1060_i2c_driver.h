@@ -7,86 +7,11 @@
 #include <cstdint>
 #include <imxrt.h>
 #include "imx_rt1060.h"
-#include "../i2c_driver.h"
-
-//This is an abstract class. Functions which want to use the callback feature must be a child of this class and overide the 'I2CCallback' function.
-
-class I2CCallbackClass {
- public:
-    virtual void I2CCallback(I2CBuffer& readBuffer) = 0;
-}
+#include <i2c_driver.h>
+#include "../i2c_buffer.h"
 
 
-class I2CBuffer {
-public:
-    CommandBuffer() = default;
-    
-    ~CommandBuffer() = default;
-    
 
-    // May be called inside or outside the ISR.
-    // This should be safe because it can never be called while
-    // the ISR is trying to read from the buffer or write to it.
-    inline void initialize(size_t new_size) {
-        reset();
-        size = new_size;
-        read_index = 0;
-        write_index = 0;
-    }
-
-    // Empties the buffer.
-    inline void reset() {
-        read_index = 0;
-        write_index = 0;
-    }
-
-    //Write
-    
-    // Returns 'false' if the buffer was already full.
-    inline bool write(uint8_t data) {
-        if (write_index == size) {
-            return false;
-        } else {
-            buffer[write_index++] = data;
-            return true;
-        }
-    }
-
-    inline size_t get_bytes_written() {
-        return write_index;
-    }
-    
-    inline size_t write_bytes_remaining() {
-        return size - write_index;
-    }
-    
-    inline bool finished_writing() {
-        return write_index == size;
-    }
-
-    //Read
-    // Caller is responsible for preventing a read beyond the end of the buffer.
-    inline uint16_t read() {
-        if (read_index == size) {
-            return 0;
-        }
-        return buffer[read_index++];
-    }
-
-    inline size_t get_bytes_read() {
-        return write_index;
-    }
-
-    inline bool finished_reading() {
-        return read_index == size;
-    }
-
-private:
-    volatile uint16_t buffer[256];
-    volatile size_t size = 0;
-    volatile size_t read_index = 0;
-    volatile size_t write_index = 0;
-};
 
 //// A read or write buffer.
 //// You cannot use the same buffer for both reading and writing.
@@ -180,6 +105,7 @@ public:
     } Config;
 };
 
+
 class IMX_RT1060_I2CMaster : public I2CMaster {
 public:
     IMX_RT1060_I2CMaster(IMXRT_LPI2C_Registers* port, IMX_RT1060_I2CBase::Config& config, void (* isr)());
@@ -194,24 +120,44 @@ public:
     void begin(uint32_t frequency) override;
 
     void end() override;
-
-    bool finished() override;
-    bool finish() override;
-    bool ok(const char* message) override;
-
-    size_t get_bytes_transferred() override;
-
-    void write_async(uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) override;
-    bool write_at_register_async(uint8_t i2c_address, uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) override;
-    bool write_at_register_blocking(uint8_t i2c_address, uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) override;
-
-
-    void read_async(uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) override;
-    bool read_async_callback(uint8_t address, uint8_t* buffer, size_t num_bytes, std::function<void(size_t length)> callback) override;
     
-    bool read_at_register_async_callback(uint8_t address, uint8_t initial_register, uint8_t* buffer, size_t num_bytes, std::function<void(size_t length)> callback) override;
-    bool read_at_register_blocking(uint8_t address, uint8_t initial_register, uint8_t* buffer, size_t num_bytes) override;
 
+
+    
+    bool isFinished() override;
+    bool waitUntilFinished(float timeoutLimitMills) override;
+    bool ok(const char* message) override;
+    
+    
+    // Lower level commands.
+    // Allway call this first.
+    bool initialize_transfer(bool forceRestartOnFailure = true);
+    //Add as many of these as desired (up to the limit of the 'command buffer'. Default is 256 commands/data bytes).
+    bool add_read_at_register_to_command_buffer( uint8_t i2c_address, uint8_t initial_register, size_t num_bytes); //4 commands
+    bool add_read_to_command_buffer(             uint8_t i2c_address,                           size_t num_bytes); // 2 commands
+    bool add_write_at_register_to_command_buffer(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite); //2 + size(dataToWrite)
+    bool add_write_to_command_buffer(            uint8_t i2c_address,                           size_t num_bytes, const uint8_t* dataToWrite); //1 + size(dataToWrite)
+    
+    //Call this to execute the command.
+    bool execute_command_buffer_async(I2CCallbackClass * I2CCallback_ptr = nullptr, bool abortOnFailure = true);
+    bool execute_command_buffer_blocking(size_t num_bytes, uint8_t *buffer = nullptr, float timeoutLimitMills = 200);
+    
+    bool read_at_register_blocking( uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, uint8_t* buffer) override;
+    bool read_at_register_async(    uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, I2CCallbackClass * callback_ptr) override;
+    bool read_blocking(             uint8_t i2c_address,                           size_t num_bytes, uint8_t* buffer) override;
+    bool read_async(                uint8_t i2c_address,                           size_t num_bytes, I2CCallbackClass * callback_ptr) override;
+    bool write_at_register_blocking(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite) override;
+    bool write_at_register_async(   uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite, I2CCallbackClass * callback_ptr = nullptr) override;
+    bool write_blocking(            uint8_t i2c_address,                           size_t num_bytes, const uint8_t* dataToWrite) override;
+    bool write_async(               uint8_t i2c_address,                           size_t num_bytes, const uint8_t* dataToWrite,  I2CCallbackClass * callback_ptr = nullptr) override;
+       
+    
+    
+
+     //bool ok(const char* message) override;
+
+     
+  
     // DO NOT call this method directly.
     void _interrupt_service_routine();
 private:
@@ -219,6 +165,7 @@ private:
         // Busy states
         initialized = 0,
         loading,       // Waiting for START to be sent and acknowledge
+        starting,
         active,
         callback,
         stopping,
@@ -247,7 +194,7 @@ private:
         
     void (* isr)();
     void set_clock(uint32_t frequency);
-    void abort_transaction_async();
+    bool abort_transaction_async();
     bool start(uint8_t address, uint32_t direction);
     uint8_t tx_fifo_count();
     uint8_t rx_fifo_count();
@@ -299,13 +246,13 @@ public:
 private:
     enum class State {
         // Busy states
-        receiving = 0,  // Receiving bytes from the master
-        transmitting,   // Transmitting bytes to the master
+               receiving = 0,  // Receiving bytes from the master
+               transmitting,   // Transmitting bytes to the master
 
-        // 'idle' and above mean that the driver has finished
-        // whatever it was doing and is ready to do more work.
-        idle = 100,     // Not in a transaction
-        aborted,        // Transaction was aborted due to an error.
+               // 'idle' and above mean that the driver has finished
+               // whatever it was doing and is ready to do more work.
+               idle = 100,     // Not in a transaction
+               aborted,        // Transaction was aborted due to an error.
     };
 
     IMXRT_LPI2C_Registers* const port;

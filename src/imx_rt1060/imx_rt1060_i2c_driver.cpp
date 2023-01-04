@@ -29,10 +29,9 @@ static void log_master_status_register(uint32_t msr);
 static void log_master_control_register(const char* message, uint32_t mcr);
 #endif
 
-static uint8_t empty_buffer[0];
+//static uint8_t empty_buffer[0];
 
-I2CBuffer::I2CBuffer() : buffer(empty_buffer) {
-}
+
 
 // NXP document the pad configuration in AN5078.pdf Rev 0.
 // https://www.nxp.com/docs/en/application-note/AN5078.pdf
@@ -144,9 +143,9 @@ inline bool IMX_RT1060_I2CMaster::isFinished() {
     return state >= State::idle;
 }
 
-bool IMX_RT1060_I2CMaster::waitUntilFinished() {
+bool IMX_RT1060_I2CMaster::waitUntilFinished(float timeoutLimitMills) {
     elapsedMillis timeout;
-    while (timeout < 200) {
+    while (timeout < timeoutLimitMills) {
         if (isFinished()){
             return true;
         }
@@ -173,36 +172,39 @@ bool IMX_RT1060_I2CMaster::ok(const char* message) {
 // Run this code first.  It first checks to see if the I2C system is idle.
 // If so, it clears the read and command buffers and sets the state.
 
-bool IMX_RT1060_I2CMaster::initalize_transfer(){
+bool IMX_RT1060_I2CMaster::initialize_transfer(bool forceRestartOnFailure) {
     if (state != State::idle) {
         Serial.print("I2C - Attempted to initialize.  State is:");
-        Serial.println(state);
-        return false;
+        Serial.println((uint) state);
+        if (!forceRestartOnFailure)
+            return false;
+        if (!abort_transaction_async())
+            return false;
     }
     _error = I2CError::ok;
-    state = State:intialized;
-    readBuffer = reset();
-    commandBuffer = reset();
+    state = State::initialized;
+    readBuffer.reset();
+    commandBuffer.reset();
 }
 
 
 // -- READ AT REGISTER --
 // This function will add the commands to read a number of bytes (num_bytes) from a specified starting register (inital_register) from the I2C device at (i2c_address)
 bool IMX_RT1060_I2CMaster::add_read_at_register_to_command_buffer(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes) {
-    if (state != State::intialized && state != State::loading) {
+    if (state != State::initialized && state != State::loading) {
         Serial.print("I2C - Attempted to add to command buffer, but not idle/loading.  State is:");
-        Serial.println(state);
+        Serial.println((uint)state);
         return false;
     }
    
-    if (commandBuffer.write_bytes_remaining - 1 < 4) {
+    if (commandBuffer.write_bytes_remaining() - 1 < 4) {
         //Need to leave one command open to add the STOP at the end.
         Serial.print("I2C - Not enough room left in buffer:");
-        Serial.println(commandBuffer.write_bytes_remaining);
+        Serial.println(commandBuffer.write_bytes_remaining());
         return false;
     }
     
-    state = State:loading;
+    state = State::loading;
     commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_WRITE);
     commandBuffer.write(LPI2C_MTDR_CMD_TRANSMIT | initial_register                );
     commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_READ );
@@ -214,21 +216,21 @@ bool IMX_RT1060_I2CMaster::add_read_at_register_to_command_buffer(uint8_t i2c_ad
 // -- READ --
 // This function will add the commands to read a number of bytes (num_bytes) from the I2C device at (i2c_address)
 // This does NOT specify a starting register as some I2C devices do not require it.
-bool IMX_RT1060_I2CMaster::add_read_to_command_buffer(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes) {
-    if (state != State::intialized && state != State::loading) {
+bool IMX_RT1060_I2CMaster::add_read_to_command_buffer(uint8_t i2c_address, size_t num_bytes) {
+    if (state != State::initialized && state != State::loading) {
         Serial.print("I2C - Attempted to add to command buffer, but not idle/loading.  State is:");
-        Serial.println(state);
+        Serial.println((uint)state);
         return false;
     }
     
-    if (commandBuffer.write_bytes_remaining - 1 < 2) {
+    if (commandBuffer.write_bytes_remaining() - 1 < 2) {
         //Need to leave one command open to add the STOP at the end.
         Serial.print("I2C - Not enough room left in buffer:");
-        Serial.println(commandBuffer.write_bytes_remaining);
+        Serial.println(commandBuffer.write_bytes_remaining());
         return false;
     }
     
-    state = State:loading;
+    state = State::loading;
     commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_READ );
     commandBuffer.write(LPI2C_MTDR_CMD_RECEIVE  | (num_bytes - 1)                 );
     return true;
@@ -238,27 +240,27 @@ bool IMX_RT1060_I2CMaster::add_read_to_command_buffer(uint8_t i2c_address, uint8
 // -- WRITE AT REGISTER --
 // This function will add the commands to write a number of bytes (num_bytes) from an array (buffer) starting at register (intial_register) to the I2C device at (i2c_address)
 // This does NOT specify a starting register as some I2C devices do not require it.
-bool IMX_RT1060_I2CMaster::add_write_at_register_to_command_buffer(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, uint8_t* buffer) {
-    if (state != State::intialized && state != State::loading) {
+bool IMX_RT1060_I2CMaster::add_write_at_register_to_command_buffer(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite) {
+    if (state != State::initialized && state != State::loading) {
         Serial.print("I2C - Attempted to add to command buffer, but not idle/loading.  State is:");
-        Serial.println(state);
+        Serial.println((uint) state);
         return false;
     }
     
-    if (commandBuffer.write_bytes_remaining - 1 < 2 + num_bytes) {
+    if (commandBuffer.write_bytes_remaining() - 1 < 2 + num_bytes) {
         //Need to leave one command open to add the STOP at the end.
         Serial.print("I2C - Not enough room left in buffer:");
-        Serial.println(commandBuffer.write_bytes_remaining);
+        Serial.println(commandBuffer.write_bytes_remaining());
         return false;
     }
     
-    state = State:loading;
+    state = State::loading;
     commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_WRITE);
     commandBuffer.write(LPI2C_MTDR_CMD_TRANSMIT | initial_register                );
-    for (size_t index = 0, index < num_bytes, index++) {
-        if (commandBuffer.full()) //Redundent with previous check...
+    for (size_t index = 0; index < num_bytes; index++) {
+        if (commandBuffer.finished_writing()) //Redundent with previous check...
             return false;
-        commandBuffer.write(buffer[index]);
+        commandBuffer.write(dataToWrite[index]);
     }
     return true;
 }
@@ -266,26 +268,26 @@ bool IMX_RT1060_I2CMaster::add_write_at_register_to_command_buffer(uint8_t i2c_a
 // -- WRITE --
 // This function will add the commands to write a number of bytes (num_bytes) from an array (buffer) to the I2C device at (i2c_address)
 // This does NOT specify a starting register as some I2C devices do not require it.
-bool IMX_RT1060_I2CMaster::add_write_to_command_buffer(uint8_t i2c_address, size_t num_bytes, uint8_t* buffer) {
-    if (state != State::intialized && state != State::loading) {
+bool IMX_RT1060_I2CMaster::add_write_to_command_buffer(uint8_t i2c_address, size_t num_bytes, const uint8_t* dataToWrite) {
+    if (state != State::initialized && state != State::loading) {
         Serial.print("I2C - Attempted to add to command buffer, but not idle/loading.  State is:");
-        Serial.println(state);
+        Serial.println((uint) state);
         return false;
     }
     
-    if (commandBuffer.write_bytes_remaining - 1 < 1 + num_bytes) {
+    if (commandBuffer.write_bytes_remaining() - 1 < 1 + num_bytes) {
         //Need to leave one command open to add the STOP at the end.
         Serial.print("I2C - Not enough room left in buffer:");
-        Serial.println(commandBuffer.write_bytes_remaining);
+        Serial.println(commandBuffer.write_bytes_remaining());
         return false;
     }
     
-    state = State:loading;
+    state = State::loading;
     commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_WRITE);
-   for (size_t index = 0, index < num_bytes, index++) {
-        if (commandBuffer.full())
+    for (size_t index = 0; index < num_bytes; index++) {
+        if (commandBuffer.finished_writing())
             return false;
-        commandBuffer.write(buffer[index]);
+        commandBuffer.write(dataToWrite[index]);
     }
     return true;
 }
@@ -299,12 +301,12 @@ bool IMX_RT1060_I2CMaster::add_write_to_command_buffer(uint8_t i2c_address, size
 // However, it may just be that your code has looped around and is trying to start another I2C transaction before the previous one finished.
 // If abortOnFailure is set to False, and you use async transactions, make sure you somehow set up a timeout to reset if things go poorly.
 
-bool IMX_RT1060_I2CMaster::execute_command_buffer_async(I2CCallbackClass * I2CCallback_ptr = nullptr, bool abortOnFailure = true) {
+bool IMX_RT1060_I2CMaster::execute_command_buffer_async(I2CCallbackClass * I2CCallback_ptr, bool abortOnFailure) {
     
     if (state != State::loading) {
         // We haven't completed the previous transaction yet
         Serial.print("I2C - Cannot execute. Wrong state. State: ");
-        Serial.print((int)state);
+        Serial.print((uint)state);
         if (abortOnFailure) {
             abort_transaction_async();
             _error = I2CError::master_not_ready;
@@ -327,7 +329,7 @@ bool IMX_RT1060_I2CMaster::execute_command_buffer_async(I2CCallbackClass * I2CCa
         return false;
     }
     
-    if (commandBuffer.write_bytes_remaining  < 1) {
+    if (commandBuffer.write_bytes_remaining()  < 1) {
         Serial.print("I2C - Not enough room left in buffer to add the STOP");
         return false;
     }
@@ -360,11 +362,11 @@ bool IMX_RT1060_I2CMaster::execute_command_buffer_async(I2CCallbackClass * I2CCa
     
 }
 
-bool IMX_RT1060_I2CMaster::execute_command_buffer_blocking(uint8_t *buffer = nullptr) {
-    if (execute_command_buffer(nullptr)) {
-        if (waitUntilFinished()) {
+bool IMX_RT1060_I2CMaster::execute_command_buffer_blocking(size_t num_bytes, uint8_t *buffer,  float timeoutLimitMills) {
+    if (execute_command_buffer_async(nullptr)) {
+        if (waitUntilFinished(timeoutLimitMills)) {
             if (buffer != nullptr){
-                for (size_t index = 0, index < num_bytes, index ++)
+                for (size_t index = 0; index < num_bytes; index ++)
                     buffer[index] = readBuffer.read();
             }
             return true;
@@ -379,8 +381,10 @@ bool IMX_RT1060_I2CMaster::execute_command_buffer_blocking(uint8_t *buffer = nul
 //This funciton reads data (num_bytes) at a specified register (initial_register) from the device at (i2c_address) and put it in buffer (buffer).
 //The code will block until the data has been returned or timed out.
 bool IMX_RT1060_I2CMaster::read_at_register_blocking(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, uint8_t* buffer) {
-    if (add_read_at_register_to_command_buffer(i2c_address, initial_register,  num_bytes)) {
-        return execute_command_buffer_blocking(buffer);
+    if (initialize_transfer()) {
+        if (add_read_at_register_to_command_buffer(i2c_address, initial_register,  num_bytes)) {
+            return execute_command_buffer_blocking(num_bytes, buffer);
+        }
     }
     return false;
 }
@@ -390,19 +394,23 @@ bool IMX_RT1060_I2CMaster::read_at_register_blocking(uint8_t i2c_address, uint8_
 //The caller must specify the pointer of the object that is a child of I2Ccallback.
 //Note this will be called from an ISR, so I2CCallback must be interupt safe.
 bool IMX_RT1060_I2CMaster::read_at_register_async(uint8_t i2c_address, uint8_t initial_register,  size_t num_bytes, I2CCallbackClass * callback_ptr) {
-    if (add_read_at_register_to_command_buffer(i2c_address, initial_register,  num_bytes)) {
-        return execute_command_buffer_async(callback_ptr);
+    if (initialize_transfer()) {
+        if (add_read_at_register_to_command_buffer(i2c_address, initial_register,  num_bytes)) {
+            return execute_command_buffer_async(callback_ptr);
+        }
     }
     return false;
-    }
 }
+
 
 //This funciton reads data (num_bytes) from the device at (i2c_address) and put it in buffer (buffer).
 //The code will block until the data has been returned or timed out.
 //This code does NOT first write to the I2C device which register to read from.  Some devices will just re-read the same register, thus saving time per transaction.
 bool IMX_RT1060_I2CMaster::read_blocking(uint8_t i2c_address, size_t num_bytes, uint8_t* buffer) {
-    if (add_read_to_command_buffer(i2c_address,  num_bytes)) {
-        return execute_command_buffer_blocking(buffer);
+    if (initialize_transfer()) {
+        if (add_read_to_command_buffer(i2c_address,  num_bytes)) {
+            return execute_command_buffer_blocking(num_bytes, buffer);
+        }
     }
     return false;
 }
@@ -414,8 +422,10 @@ bool IMX_RT1060_I2CMaster::read_blocking(uint8_t i2c_address, size_t num_bytes, 
 //This code does NOT first write to the I2C device which register to read from.  Some devices will just re-read the same register, thus saving time per transaction.
 
 bool IMX_RT1060_I2CMaster::read_async(uint8_t i2c_address, size_t num_bytes, I2CCallbackClass * callback_ptr) {
-    if (add_read_to_command_buffer(i2c_address,  num_bytes)) {
-       return execute_command_buffer_async(callback);
+    if (initialize_transfer()) {
+        if (add_read_to_command_buffer(i2c_address,  num_bytes)) {
+            return execute_command_buffer_async(callback_ptr);
+        }
     }
     return false;
     
@@ -424,36 +434,44 @@ bool IMX_RT1060_I2CMaster::read_async(uint8_t i2c_address, size_t num_bytes, I2C
 // -- WRITE COMMANDS --
 //This funciton writes data (num_bytes) at a specified register (initial_register) to the device at (i2c_address) from the array (buffer).
 //The code will block until the data has been sent or timed out.
-bool IMX_RT1060_I2CMaster::write_at_register_blocking(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, uint8_t* buffer) {
-    if (add_write_at_register_to_command_buffer( i2c_address,  initial_register,  buffer,  num_bytes)) {
-        return execute_command_buffer_blocking(nullptr)
+bool IMX_RT1060_I2CMaster::write_at_register_blocking(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite) {
+    if (initialize_transfer()) {
+        if (add_write_at_register_to_command_buffer( i2c_address,  initial_register,  num_bytes,  dataToWrite)) {
+            return execute_command_buffer_blocking(0, nullptr);
+        }
     }
     return false;
 }
 
 //This funciton writes data (num_bytes) at a specified register (initial_register) to the device at (i2c_address) from the array (buffer).
 //The code will not block.  An optional callback can be provided.
-bool IMX_RT1060_I2CMaster::write_at_register_async(uint8_t i2c_address, uint8_t initial_register,  size_t num_bytes,  uint8_t* buffer, I2CCallbackClass * callback_ptr = nullptr) {
-    if (add_write_at_register_to_command_buffer( i2c_address,  initial_register,  buffer,  num_bytes)) {
-        return execute_command_buffer_async(callback);
+bool IMX_RT1060_I2CMaster::write_at_register_async(uint8_t i2c_address, uint8_t initial_register,  size_t num_bytes, const uint8_t* dataToWrite, I2CCallbackClass * callback_ptr) {
+    if (initialize_transfer()) {
+        if (add_write_at_register_to_command_buffer( i2c_address,  initial_register,   num_bytes,  dataToWrite)) {
+            return execute_command_buffer_async(callback_ptr);
+        }
     }
     return false;
 }
 
 //This funciton writes data (num_bytes) to the device at (i2c_address) from the array (buffer).
 //The code will block until the data has been sent or timed out.
-bool IMX_RT1060_I2CMaster::write_blocking(uint8_t i2c_address,size_t num_bytes, uint8_t* buffer) {
-    if (add_write_to_command_buffer( i2c_address,  buffer,  num_bytes)) {
-        return execute_command_buffer_blocking(nullptr);
+bool IMX_RT1060_I2CMaster::write_blocking(uint8_t i2c_address,size_t num_bytes, const uint8_t* dataToWrite) {
+    if (initialize_transfer()) {
+        if (add_write_to_command_buffer( i2c_address, num_bytes, dataToWrite)) {
+            return execute_command_buffer_blocking(0, nullptr);
+        }
     }
     return false;
 }
 
 //This funciton writes data (num_bytes) to the device at (i2c_address) from the array (buffer).
 //The code will not block.  An optional callback can be provided.
-bool IMX_RT1060_I2CMaster::write_async(uint8_t i2c_address,  uint8_t* buffer,  size_t num_bytes, std::function<void(size_t length)> callback) {
-    if (add_write_to_command_buffer( i2c_address,  buffer,  num_bytes)) {
-        return execute_command_buffer_async(callback);
+bool IMX_RT1060_I2CMaster::write_async(uint8_t i2c_address,  size_t num_bytes,  const uint8_t* dataToWrite, I2CCallbackClass * callback_ptr) {
+    if (initialize_transfer()) {
+        if (add_write_to_command_buffer( i2c_address,   num_bytes,dataToWrite)) {
+            return execute_command_buffer_async(callback_ptr);
+        }
     }
     return false;
 }
@@ -524,6 +542,8 @@ void IMX_RT1060_I2CMaster::_interrupt_service_routine() {
     
     if (msr & LPI2C_MSR_RDF) {
         //The RDF flag is true if there is data above the watermark.  The watermark is set at 0, so this flag is true if there is any data in the read FIFO buffer.
+        if (state == State::starting)
+            state = State::active;
         while (rx_fifo_count() > 0) {
             #ifdef DEBUG_I2C
             uint8_t data = port->MRDR;
@@ -540,9 +560,11 @@ void IMX_RT1060_I2CMaster::_interrupt_service_routine() {
         //TDF is true when the number of bytes in the FIFO < Watermark. The watermark is set at 0, so this flag is true if there is no data in the TX buffer.
         //If Autostop is on, this may cause problems since we still may have commands in the "Command Buffer"
         //For this reason, we manually (automatically?) add the stop command to the buffer as part of the ExecuteCommandBuffer Member function.
+        if (state == State::starting)
+            state = State::active;
         if (state == State::active) {
-            while (commandBuffer.has_data_available() && tx_fifo_count() < NUM_FIFOS) {
-                port->MTDR =commandBuffer.read();  //Put the data in the FIFO with Tx command
+            while (!commandBuffer.finished_reading() && tx_fifo_count() < NUM_FIFOS) {
+                port->MTDR = commandBuffer.read();  //Put the data in the FIFO with Tx command
             }
         }
     }
@@ -556,14 +578,12 @@ void IMX_RT1060_I2CMaster::_interrupt_service_routine() {
         port->MIER &= ~LPI2C_MIER_SDIE; // If we don't turn of SDIE, we get one more interrupt pass through.
         port->MSR = LPI2C_MSR_SDF;  //Clear Stop Detect Flag
         port->MSR = LPI2C_MSR_EPF;  //Clear Stop Detect Flag
-        if (_error != I2CError:ok && after_receive_callback) {
+        if (_error == I2CError::ok && callback_ptr != nullptr) {
             state = State::callback;
-            after_receive_callback(readBuffer.get_bytes_transferred());
+            callback_ptr->I2CCallback(readBuffer);
         }
         state = State::idle;
     }
-        
- 
     
 }
 
@@ -586,18 +606,17 @@ inline void IMX_RT1060_I2CMaster::clear_all_msr_flags() {
 // In theory, you can use MCR[RST] to reset the master but
 // this doesn't seem to work in some circumstances. e.g.
 // When the master is trying to receive more bytes.
-void IMX_RT1060_I2CMaster::abort_transaction_async() {
+bool IMX_RT1060_I2CMaster::abort_transaction_async() {
     #ifdef DEBUG_I2C
     Serial.println("Master: abort_transaction");
     log_master_status_register(port->MSR);
     #endif
 
-    // Don't handle anymore TDF interrupts
+    // Don't handle anymore interrupts
     port->MIER &= ~LPI2C_MIER_TDIE;
+    port->MIER &= ~LPI2C_MIER_RDIE;
+    port->MIER &= ~LPI2C_MIER_SDIE;
 
-    // Clear out any commands that haven't been sent
-    port->MCR |= LPI2C_MCR_RTF;
-    port->MCR |= LPI2C_MCR_RRF;
 
     // Send a stop if haven't already done so and still control the bus
     uint32_t msr = port->MSR;
@@ -607,6 +626,21 @@ void IMX_RT1060_I2CMaster::abort_transaction_async() {
         #endif
         port->MTDR = LPI2C_MTDR_CMD_STOP;
     }
+    
+    elapsedMillis timeout;
+    while ((timeout < 200) && tx_fifo_count()) {
+        continue;
+    }
+    
+    // Clear out any commands that haven't been sent
+    port->MCR |= LPI2C_MCR_RTF;
+    port->MCR |= LPI2C_MCR_RRF;
+    
+    if (timeout >= 200)
+        return false;
+    else
+        return true;
+    
 }
 
 // Supports 100 kHz, 400 kHz and 1 MHz modes.

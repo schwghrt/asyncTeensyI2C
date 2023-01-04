@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>
+#include "i2c_buffer.h"
 
 enum class I2CError {
     // 'ok' means there were no errors since the last transaction started
@@ -62,15 +63,11 @@ protected:
 
 
 
-//class I2CCallBack {
-//public:
-//    virtual void I2CDataReady(uint8_t* buffer, size_t num_bytes);
-//
-//protected:
-//
-//};
 
-
+class I2CCallbackClass {
+ public:
+    virtual void I2CCallback(I2CBuffer& readBuffer) = 0;
+};
 
 
 class I2CMaster : public I2CDriver {
@@ -90,24 +87,22 @@ public:
 
     // False while the driver is doing work. e.g. reading or writing
     // True when it's Ok to do another read or write
-    virtual bool finished() = 0;
-
-    virtual bool finish() = 0;
+    virtual bool isFinished() = 0;
+    virtual bool waitUntilFinished(float timeoutLimitMills) = 0;
+    
     virtual bool ok(const char* message) =0;
     
-    // Returns the number of bytes transferred by the last call to
-    // write_async or read_async.
-    virtual size_t get_bytes_transferred() = 0;
-
+   
     // Transmits the contents of buffer to the slave at the given address.
     // The caller must not modify the buffer until the read is complete.
     // Set 'num_bytes' to 0 to find out if there's a slave listening on this address.
     // Set 'send_stop' to true if this is the last transfer in the transaction.
     // Set 'send_stop' to false if are going to make another transfer.
     // Call finished() to see if the call has finished.
-    virtual void write_async(uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) = 0;
-    virtual bool write_at_register_async(uint8_t i2c_address, uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) = 0;
-    virtual bool write_at_register_blocking(uint8_t i2c_address, uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) = 0;
+    virtual bool write_at_register_blocking(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite) = 0;
+    virtual bool write_at_register_async(   uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite, I2CCallbackClass * callback_ptr = nullptr)  = 0;
+    virtual bool write_blocking(            uint8_t i2c_address,                           size_t num_bytes, const uint8_t* dataToWrite)  = 0;
+    virtual bool write_async(               uint8_t i2c_address,                           size_t num_bytes, const uint8_t* dataToWrite,  I2CCallbackClass * callback_ptr = nullptr) = 0 ;
 
     // Reads the specified number of bytes and copies them into the supplied buffer.
     // The caller must not modify the buffer until the read is complete.
@@ -115,12 +110,15 @@ public:
     // Set 'send_stop' to true if this is the last transfer in the transaction.
     // Set 'send_stop' to false if are going to make another transfer.
     // Call finished() to see if the call has finished.
-    virtual void read_async(uint8_t address, uint8_t* buffer, size_t num_bytes, bool send_stop) = 0;
-    virtual bool read_at_register_blocking(uint8_t address, uint8_t initial_register, uint8_t* buffer, size_t num_bytes) = 0;
-    virtual bool read_async_callback(uint8_t address, uint8_t* buffer, size_t num_bytes, std::function<void(size_t length)> callback) = 0;
-    virtual bool read_at_register_async_callback(uint8_t address, uint8_t initial_register, uint8_t* buffer, size_t num_bytes,  std::function<void(size_t length)> callback) = 0;
-    
+    virtual bool read_at_register_blocking( uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, uint8_t* buffer)  = 0;
+    virtual bool read_at_register_async(    uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, I2CCallbackClass * callback_ptr)  = 0;
+    virtual bool read_blocking(             uint8_t i2c_address,                           size_t num_bytes, uint8_t* buffer)  = 0;
+    virtual bool read_async(                uint8_t i2c_address,                           size_t num_bytes, I2CCallbackClass * callback_ptr)  = 0;
+
 };
+
+
+
 
 class I2CSlave : public I2CDriver {
 public:
