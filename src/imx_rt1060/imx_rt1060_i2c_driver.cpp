@@ -4,11 +4,11 @@
 // Fragments of this code copied from WireIMXRT.cpp © Paul Stoffregen.
 // Please support the Teensy project at pjrc.com.
 
-//#define DEBUG_I2C // Uncomment to enable debug tools
+#define DEBUG_I2C // Uncomment to enable debug tools
 #ifdef DEBUG_I2C
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "hicpp-signed-bitwise"
-#include <Arduino.h>
+//#include <Arduino.h>
 #endif
 #include <Arduino.h>		
 #include <imxrt.h>
@@ -185,6 +185,7 @@ bool IMX_RT1060_I2CMaster::initialize_transfer(bool forceRestartOnFailure) {
     state = State::initialized;
     readBuffer.reset();
     commandBuffer.reset();
+    return true;
 }
 
 
@@ -205,9 +206,9 @@ bool IMX_RT1060_I2CMaster::add_read_at_register_to_command_buffer(uint8_t i2c_ad
     }
     
     state = State::loading;
-    commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_WRITE);
+    commandBuffer.write(LPI2C_MTDR_CMD_START    |(i2c_address & 0x7F) << 1   | MASTER_WRITE);
     commandBuffer.write(LPI2C_MTDR_CMD_TRANSMIT | initial_register                );
-    commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_READ );
+    commandBuffer.write(LPI2C_MTDR_CMD_START    |(i2c_address & 0x7F) << 1        | MASTER_READ );
     commandBuffer.write(LPI2C_MTDR_CMD_RECEIVE  | (num_bytes - 1)                 );
     return true;
     
@@ -231,7 +232,7 @@ bool IMX_RT1060_I2CMaster::add_read_to_command_buffer(uint8_t i2c_address, size_
     }
     
     state = State::loading;
-    commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_READ );
+    commandBuffer.write(LPI2C_MTDR_CMD_START    | (i2c_address & 0x7F) << 1      | MASTER_READ );
     commandBuffer.write(LPI2C_MTDR_CMD_RECEIVE  | (num_bytes - 1)                 );
     return true;
     
@@ -255,7 +256,7 @@ bool IMX_RT1060_I2CMaster::add_write_at_register_to_command_buffer(uint8_t i2c_a
     }
     
     state = State::loading;
-    commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_WRITE);
+    commandBuffer.write(LPI2C_MTDR_CMD_START    | (i2c_address & 0x7F) << 1       | MASTER_WRITE);
     commandBuffer.write(LPI2C_MTDR_CMD_TRANSMIT | initial_register                );
     for (size_t index = 0; index < num_bytes; index++) {
         if (commandBuffer.finished_writing()) //Redundent with previous check...
@@ -283,7 +284,7 @@ bool IMX_RT1060_I2CMaster::add_write_to_command_buffer(uint8_t i2c_address, size
     }
     
     state = State::loading;
-    commandBuffer.write(LPI2C_MTDR_CMD_START    | i2c_address       | MASTER_WRITE);
+    commandBuffer.write(LPI2C_MTDR_CMD_START    | (i2c_address & 0x7F) << 1      | MASTER_WRITE);
     for (size_t index = 0; index < num_bytes; index++) {
         if (commandBuffer.finished_writing())
             return false;
@@ -351,7 +352,9 @@ bool IMX_RT1060_I2CMaster::execute_command_buffer_async(I2CCallbackClass * I2CCa
      
     //Put as many bytes into the FIFO
     while (!commandBuffer.finished_reading() && (NUM_FIFOS - tx_fifo_count())) {
-        port->MTDR = commandBuffer.read();
+        uint16_t dataToPush = commandBuffer.read();
+        Serial.println(dataToPush,BIN);
+        port->MTDR = dataToPush;
     }
     //Turn on the interrupts for the TX and RX buffers.
     port->MIER |= LPI2C_MIER_SDIE; //Stop Byte Detected
@@ -548,8 +551,9 @@ void IMX_RT1060_I2CMaster::_interrupt_service_routine() {
             #ifdef DEBUG_I2C
             uint8_t data = port->MRDR;
             readBuffer.write(data);
-            Serial.print(data);
-            Serial.print(", ");
+            Serial.print("Read");
+            Serial.println(data);
+            //Serial.print(", ");
             #else
             readBuffer.write(port->MRDR);
             #endif
@@ -560,11 +564,15 @@ void IMX_RT1060_I2CMaster::_interrupt_service_routine() {
         //TDF is true when the number of bytes in the FIFO < Watermark. The watermark is set at 0, so this flag is true if there is no data in the TX buffer.
         //If Autostop is on, this may cause problems since we still may have commands in the "Command Buffer"
         //For this reason, we manually (automatically?) add the stop command to the buffer as part of the ExecuteCommandBuffer Member function.
-        if (state == State::starting)
+        if (state == State::starting) {
+            Serial.println("State Starting->Active");
             state = State::active;
+        }
         if (state == State::active) {
             while (!commandBuffer.finished_reading() && tx_fifo_count() < NUM_FIFOS) {
-                port->MTDR = commandBuffer.read();  //Put the data in the FIFO with Tx command
+                uint16_t dataToPush = commandBuffer.read();
+                Serial.println(dataToPush,BIN);
+                port->MTDR = dataToPush;  //Put the data in the FIFO with Tx command
             }
         }
     }
@@ -673,192 +681,192 @@ void IMX_RT1060_I2CMaster::set_clock(uint32_t frequency) {
     port->MCCR1 = port->MCCR0;
 }
 
-void IMX_RT1060_I2CSlave::listen(uint8_t address) {
-    // Listen to a single 7-bit address
-    uint32_t samr = LPI2C_SAMR_ADDR0(address);
-    uint32_t address_config = LPI2C_SCFGR1_ADDRCFG(0x0);
-    listen(samr, address_config);
-}
-
-void IMX_RT1060_I2CSlave::listen(uint8_t first_address, uint8_t second_address) {
-    // Listen to 2 7-bit addresses
-    uint32_t samr = LPI2C_SAMR_ADDR0(first_address) | LPI2C_SAMR_ADDR1(second_address);
-    uint32_t address_config = LPI2C_SCFGR1_ADDRCFG(0x02);
-    listen(samr, address_config);
-}
-
-void IMX_RT1060_I2CSlave::listen_range(uint8_t first_address, uint8_t last_address) {
-    // Listen to all 7-bit addresses in the range (inclusive)
-    uint32_t samr = LPI2C_SAMR_ADDR0(first_address) | LPI2C_SAMR_ADDR1(last_address);
-    uint32_t address_config = LPI2C_SCFGR1_ADDRCFG(0x06);
-    listen(samr, address_config);
-}
-
-void IMX_RT1060_I2CSlave::listen(uint32_t samr, uint32_t address_config) {
-    // Make sure slave mode is disabled before configuring it.
-    stop_listening();
-
-    initialise_common(config, pad_control_config);
-
-    // Set the Slave Address
-    port->SAMR = samr;
-
-    // Enable clock stretching
-    port->SCFGR1 = (address_config | LPI2C_SCFGR1_TXDSTALL | LPI2C_SCFGR1_RXSTALL);
-    // Set up interrupts
-    attachInterruptVector(config.irq, isr);
-    port->SIER = (LPI2C_SIER_RSIE | LPI2C_SIER_SDIE | LPI2C_SIER_TDIE | LPI2C_SIER_RDIE);
-    NVIC_ENABLE_IRQ(config.irq);
-
-    // Enable Slave Mode
-    port->SCR = LPI2C_SCR_SEN;
-}
-
-inline void IMX_RT1060_I2CSlave::stop_listening() {
-    // End slave mode
-    stop(port, config.irq);
-}
-
-inline void IMX_RT1060_I2CSlave::after_receive(std::function<void(size_t len, uint16_t address)> callback) {
-    after_receive_callback = callback;
-}
-
-inline void IMX_RT1060_I2CSlave::before_transmit(std::function<void(uint16_t address)> callback) {
-    before_transmit_callback = callback;
-}
-
-inline void IMX_RT1060_I2CSlave::after_transmit(std::function<void(uint16_t address)> callback) {
-    after_transmit_callback = callback;
-}
-
-inline void IMX_RT1060_I2CSlave::set_transmit_buffer(uint8_t* buffer, size_t size) {
-    tx_buffer.initialise(buffer, size);
-}
-
-inline void IMX_RT1060_I2CSlave::set_receive_buffer(uint8_t* buffer, size_t size) {
-    rx_buffer.initialise(buffer, size);
-}
-
-// WARNING: Do not call directly.
-void IMX_RT1060_I2CSlave::_interrupt_service_routine() {
-    // Read the slave status register
-    uint32_t ssr = port->SSR;
-//    log_slave_status_register(ssr);
-
-    if (ssr & LPI2C_SSR_AVF) {
-        // Find out which address was used and clear to the address flag.
-        address_called = (port->SASR & LPI2C_SASR_RADDR(0x7FF)) >> 1;
-    }
-
-    if (ssr & (LPI2C_SSR_RSF | LPI2C_SSR_SDF)) {
-        // Detected Repeated START or STOP
-        port->SSR = (LPI2C_SSR_RSF | LPI2C_SSR_SDF);
-        end_of_frame();
-    }
-
-    if (ssr & LPI2C_SSR_RDF) {
-        //  Received Data
-        uint32_t srdr = port->SRDR; // Read the Slave Received Data Register
-        if (srdr & LPI2C_SRDR_SOF) {
-            // Start of Frame (The first byte since a (repeated) START or STOP condition)
-            _error = I2CError::ok;
-            if (rx_buffer.initialised()) {
-                rx_buffer.reset();
-                state = State::receiving;
-            }
-        }
-        uint8_t data = srdr & LPI2C_SRDR_DATA(0xFF);
-        if (rx_buffer.initialised()) {
-            if (!rx_buffer.write(data)) {
-                // The buffer is already full.
-                _error = I2CError::buffer_overflow;
-                // TODO: The spec says we should send NACK but how?
-            }
-        } else {
-            // We are not interested in reading anything.
-            // TODO: The spec says we should send NACK but how?
-            // Clear previous status and error
-            state = State::idle;
-        }
-    }
-
-    if (ssr & LPI2C_SSR_TDF) {
-        // Transmit Data Request - Master is requesting a byte
-        bool start_of_frame = state >= State::idle;
-        if (start_of_frame) {
-            _error = I2CError::ok;
-            state = State::transmitting;
-            if (before_transmit_callback) {
-                before_transmit_callback(address_called);
-            }
-        }
-        if (tx_buffer.initialised()) {
-            if (start_of_frame) {
-                tx_buffer.reset();
-            }
-            if (tx_buffer.has_data_available()) {
-                port->STDR = tx_buffer.read();
-            } else {
-                port->STDR = DUMMY_BYTE;
-                // WARNING: We're always asked for one more byte then
-                // the master actually requested. Use trailing_byte_sent
-                // to work out whether the master actually asked for too much data.
-                if (!trailing_byte_sent) {
-                    trailing_byte_sent = true;
-                } else {
-                    _error = I2CError::buffer_underflow;
-                }
-            }
-        } else {
-            // We don't have any data to send.
-            // TODO: The spec says we should send NACK but how?
-            // Just send a dummy value for now.
-            port->STDR = DUMMY_BYTE;
-            _error = I2CError::buffer_underflow;  // Clear previous status
-        }
-    }
-
-    if (ssr & LPI2C_SSR_FEF) {
-        port->SSR = LPI2C_SSR_FEF;
-        // Will not happen if clock stretching is enabled.
-    }
-
-    if (ssr & LPI2C_SSR_BEF) {
-        #ifdef DEBUG_I2C
-        Serial.println("I2C Slave: Bit Error");
-        #endif
-        // The bus is probably stuck at this point.
-        // I don't think the slave can clear the fault. The master has to do it.
-        port->SSR = LPI2C_SSR_BEF;
-        state = State::aborted;
-        _error = I2CError::bit_error;
-        end_of_frame();
-    }
-}
-
-// Called from within the ISR when we receive a Repeated START or STOP
-void IMX_RT1060_I2CSlave::end_of_frame() {
-    if (state == State::receiving) {
-        if (after_receive_callback) {
-            after_receive_callback(rx_buffer.get_bytes_transferred(), address_called);
-        }
-    } else if (state == State::transmitting) {
-        trailing_byte_sent = false;
-        if (after_transmit_callback) {
-            after_transmit_callback(address_called);
-        }
-    }
-    #ifdef DEBUG_I2C
-    else if (state != State::idle) {
-        Serial.print("Unexpected 'End of Frame'. State: ");
-        Serial.println((int)state);
-    }
-    if (_error == I2CError::bit_error) {
-        Serial.println("Transaction aborted because of bit error.");
-    }
-    #endif
-    state = State::idle;
-}
+//void IMX_RT1060_I2CSlave::listen(uint8_t address) {
+//    // Listen to a single 7-bit address
+//    uint32_t samr = LPI2C_SAMR_ADDR0(address);
+//    uint32_t address_config = LPI2C_SCFGR1_ADDRCFG(0x0);
+//    listen(samr, address_config);
+//}
+//
+//void IMX_RT1060_I2CSlave::listen(uint8_t first_address, uint8_t second_address) {
+//    // Listen to 2 7-bit addresses
+//    uint32_t samr = LPI2C_SAMR_ADDR0(first_address) | LPI2C_SAMR_ADDR1(second_address);
+//    uint32_t address_config = LPI2C_SCFGR1_ADDRCFG(0x02);
+//    listen(samr, address_config);
+//}
+//
+//void IMX_RT1060_I2CSlave::listen_range(uint8_t first_address, uint8_t last_address) {
+//    // Listen to all 7-bit addresses in the range (inclusive)
+//    uint32_t samr = LPI2C_SAMR_ADDR0(first_address) | LPI2C_SAMR_ADDR1(last_address);
+//    uint32_t address_config = LPI2C_SCFGR1_ADDRCFG(0x06);
+//    listen(samr, address_config);
+//}
+//
+//void IMX_RT1060_I2CSlave::listen(uint32_t samr, uint32_t address_config) {
+//    // Make sure slave mode is disabled before configuring it.
+//    stop_listening();
+//
+//    initialise_common(config, pad_control_config);
+//
+//    // Set the Slave Address
+//    port->SAMR = samr;
+//
+//    // Enable clock stretching
+//    port->SCFGR1 = (address_config | LPI2C_SCFGR1_TXDSTALL | LPI2C_SCFGR1_RXSTALL);
+//    // Set up interrupts
+//    attachInterruptVector(config.irq, isr);
+//    port->SIER = (LPI2C_SIER_RSIE | LPI2C_SIER_SDIE | LPI2C_SIER_TDIE | LPI2C_SIER_RDIE);
+//    NVIC_ENABLE_IRQ(config.irq);
+//
+//    // Enable Slave Mode
+//    port->SCR = LPI2C_SCR_SEN;
+//}
+//
+//inline void IMX_RT1060_I2CSlave::stop_listening() {
+//    // End slave mode
+//    stop(port, config.irq);
+//}
+//
+//inline void IMX_RT1060_I2CSlave::after_receive(std::function<void(size_t len, uint16_t address)> callback) {
+//    after_receive_callback = callback;
+//}
+//
+//inline void IMX_RT1060_I2CSlave::before_transmit(std::function<void(uint16_t address)> callback) {
+//    before_transmit_callback = callback;
+//}
+//
+//inline void IMX_RT1060_I2CSlave::after_transmit(std::function<void(uint16_t address)> callback) {
+//    after_transmit_callback = callback;
+//}
+//
+//inline void IMX_RT1060_I2CSlave::set_transmit_buffer(uint8_t* buffer, size_t size) {
+//    tx_buffer.initialise(buffer, size);
+//}
+//
+//inline void IMX_RT1060_I2CSlave::set_receive_buffer(uint8_t* buffer, size_t size) {
+//    rx_buffer.initialise(buffer, size);
+//}
+//
+//// WARNING: Do not call directly.
+//void IMX_RT1060_I2CSlave::_interrupt_service_routine() {
+//    // Read the slave status register
+//    uint32_t ssr = port->SSR;
+////    log_slave_status_register(ssr);
+//
+//    if (ssr & LPI2C_SSR_AVF) {
+//        // Find out which address was used and clear to the address flag.
+//        address_called = (port->SASR & LPI2C_SASR_RADDR(0x7FF)) >> 1;
+//    }
+//
+//    if (ssr & (LPI2C_SSR_RSF | LPI2C_SSR_SDF)) {
+//        // Detected Repeated START or STOP
+//        port->SSR = (LPI2C_SSR_RSF | LPI2C_SSR_SDF);
+//        end_of_frame();
+//    }
+//
+//    if (ssr & LPI2C_SSR_RDF) {
+//        //  Received Data
+//        uint32_t srdr = port->SRDR; // Read the Slave Received Data Register
+//        if (srdr & LPI2C_SRDR_SOF) {
+//            // Start of Frame (The first byte since a (repeated) START or STOP condition)
+//            _error = I2CError::ok;
+//            if (rx_buffer.initialised()) {
+//                rx_buffer.reset();
+//                state = State::receiving;
+//            }
+//        }
+//        uint8_t data = srdr & LPI2C_SRDR_DATA(0xFF);
+//        if (rx_buffer.initialised()) {
+//            if (!rx_buffer.write(data)) {
+//                // The buffer is already full.
+//                _error = I2CError::buffer_overflow;
+//                // TODO: The spec says we should send NACK but how?
+//            }
+//        } else {
+//            // We are not interested in reading anything.
+//            // TODO: The spec says we should send NACK but how?
+//            // Clear previous status and error
+//            state = State::idle;
+//        }
+//    }
+//
+//    if (ssr & LPI2C_SSR_TDF) {
+//        // Transmit Data Request - Master is requesting a byte
+//        bool start_of_frame = state >= State::idle;
+//        if (start_of_frame) {
+//            _error = I2CError::ok;
+//            state = State::transmitting;
+//            if (before_transmit_callback) {
+//                before_transmit_callback(address_called);
+//            }
+//        }
+//        if (tx_buffer.initialised()) {
+//            if (start_of_frame) {
+//                tx_buffer.reset();
+//            }
+//            if (tx_buffer.has_data_available()) {
+//                port->STDR = tx_buffer.read();
+//            } else {
+//                port->STDR = DUMMY_BYTE;
+//                // WARNING: We're always asked for one more byte then
+//                // the master actually requested. Use trailing_byte_sent
+//                // to work out whether the master actually asked for too much data.
+//                if (!trailing_byte_sent) {
+//                    trailing_byte_sent = true;
+//                } else {
+//                    _error = I2CError::buffer_underflow;
+//                }
+//            }
+//        } else {
+//            // We don't have any data to send.
+//            // TODO: The spec says we should send NACK but how?
+//            // Just send a dummy value for now.
+//            port->STDR = DUMMY_BYTE;
+//            _error = I2CError::buffer_underflow;  // Clear previous status
+//        }
+//    }
+//
+//    if (ssr & LPI2C_SSR_FEF) {
+//        port->SSR = LPI2C_SSR_FEF;
+//        // Will not happen if clock stretching is enabled.
+//    }
+//
+//    if (ssr & LPI2C_SSR_BEF) {
+//        #ifdef DEBUG_I2C
+//        Serial.println("I2C Slave: Bit Error");
+//        #endif
+//        // The bus is probably stuck at this point.
+//        // I don't think the slave can clear the fault. The master has to do it.
+//        port->SSR = LPI2C_SSR_BEF;
+//        state = State::aborted;
+//        _error = I2CError::bit_error;
+//        end_of_frame();
+//    }
+//}
+//
+//// Called from within the ISR when we receive a Repeated START or STOP
+//void IMX_RT1060_I2CSlave::end_of_frame() {
+//    if (state == State::receiving) {
+//        if (after_receive_callback) {
+//            after_receive_callback(rx_buffer.get_bytes_transferred(), address_called);
+//        }
+//    } else if (state == State::transmitting) {
+//        trailing_byte_sent = false;
+//        if (after_transmit_callback) {
+//            after_transmit_callback(address_called);
+//        }
+//    }
+//    #ifdef DEBUG_I2C
+//    else if (state != State::idle) {
+//        Serial.print("Unexpected 'End of Frame'. State: ");
+//        Serial.println((int)state);
+//    }
+//    if (_error == I2CError::bit_error) {
+//        Serial.println("Transaction aborted because of bit error.");
+//    }
+//    #endif
+//    state = State::idle;
+//}
 
 IMX_RT1060_I2CBase::Config i2c1_config = {
         CCM_CCGR2,
@@ -917,29 +925,29 @@ static void master2_isr() {
     Master2._interrupt_service_routine();
 }
 
-static void slave_isr();
-
-IMX_RT1060_I2CSlave Slave = IMX_RT1060_I2CSlave(&LPI2C1, i2c1_config, slave_isr);
-
-static void slave_isr() {
-    Slave._interrupt_service_routine();
-}
-
-static void slave1_isr();
-
-IMX_RT1060_I2CSlave Slave1 = IMX_RT1060_I2CSlave(&LPI2C3, i2c3_config, slave1_isr);
-
-static void slave1_isr() {
-    Slave1._interrupt_service_routine();
-}
-
-static void slave2_isr();
-
-IMX_RT1060_I2CSlave Slave2 = IMX_RT1060_I2CSlave(&LPI2C4, i2c4_config, slave2_isr);
-
-static void slave2_isr() {
-    Slave2._interrupt_service_routine();
-}
+//static void slave_isr();
+//
+//IMX_RT1060_I2CSlave Slave = IMX_RT1060_I2CSlave(&LPI2C1, i2c1_config, slave_isr);
+//
+//static void slave_isr() {
+//    Slave._interrupt_service_routine();
+//}
+//
+//static void slave1_isr();
+//
+//IMX_RT1060_I2CSlave Slave1 = IMX_RT1060_I2CSlave(&LPI2C3, i2c3_config, slave1_isr);
+//
+//static void slave1_isr() {
+//    Slave1._interrupt_service_routine();
+//}
+//
+//static void slave2_isr();
+//
+//IMX_RT1060_I2CSlave Slave2 = IMX_RT1060_I2CSlave(&LPI2C4, i2c4_config, slave2_isr);
+//
+//static void slave2_isr() {
+//    Slave2._interrupt_service_routine();
+//}
 
 #ifdef DEBUG_I2C
 static void log_master_control_register(const char* message, uint32_t mcr) {

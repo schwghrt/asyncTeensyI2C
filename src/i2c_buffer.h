@@ -23,12 +23,15 @@ public:
         size = new_size;
         read_index = 0;
         write_index = 0;
+        data_in_buffer = 0;
     }
 
     // Empties the buffer.
     inline void reset() {
         read_index = 0;
         write_index = 0;
+        size = 256;
+        data_in_buffer = 0;
     }
 
     //Write
@@ -39,6 +42,7 @@ public:
             return false;
         } else {
             buffer[write_index++] = data;
+            data_in_buffer = write_index;
             return true;
         }
     }
@@ -69,7 +73,7 @@ public:
     }
 
     inline bool finished_reading() {
-        return read_index == size;
+        return read_index == data_in_buffer;
     }
 
 private:
@@ -77,6 +81,7 @@ private:
     volatile size_t size = 0;
     volatile size_t read_index = 0;
     volatile size_t write_index = 0;
+    volatile size_t data_in_buffer = 0;
 };
 
 

@@ -143,9 +143,9 @@ public:
     bool execute_command_buffer_blocking(size_t num_bytes, uint8_t *buffer = nullptr, float timeoutLimitMills = 200);
     
     bool read_at_register_blocking( uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, uint8_t* buffer) override;
-    bool read_at_register_async(    uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, I2CCallbackClass * callback_ptr) override;
+    bool read_at_register_async(    uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, I2CCallbackClass * callback_ptr = nullptr) override;
     bool read_blocking(             uint8_t i2c_address,                           size_t num_bytes, uint8_t* buffer) override;
-    bool read_async(                uint8_t i2c_address,                           size_t num_bytes, I2CCallbackClass * callback_ptr) override;
+    bool read_async(                uint8_t i2c_address,                           size_t num_bytes, I2CCallbackClass * callback_ptr = nullptr) override;
     bool write_at_register_blocking(uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite) override;
     bool write_at_register_async(   uint8_t i2c_address, uint8_t initial_register, size_t num_bytes, const uint8_t* dataToWrite, I2CCallbackClass * callback_ptr = nullptr) override;
     bool write_blocking(            uint8_t i2c_address,                           size_t num_bytes, const uint8_t* dataToWrite) override;
@@ -205,78 +205,78 @@ extern IMX_RT1060_I2CMaster Master;     // Pins 19 and 18; SCL0 and SDA0
 extern IMX_RT1060_I2CMaster Master1;    // Pins 16 and 17; SCL1 and SDA1
 extern IMX_RT1060_I2CMaster Master2;    // Pins 24 and 25; SCL2 and SDA2
 
-class IMX_RT1060_I2CSlave : public I2CSlave
-{
-public:
-    IMX_RT1060_I2CSlave(IMXRT_LPI2C_Registers* port, IMX_RT1060_I2CBase::Config& config, void (* isr)())
-            : port(port), config(config), isr(isr) {
-    }
+//class IMX_RT1060_I2CSlave : public I2CSlave
+//{
+//public:
+//    IMX_RT1060_I2CSlave(IMXRT_LPI2C_Registers* port, IMX_RT1060_I2CBase::Config& config, void (* isr)())
+//            : port(port), config(config), isr(isr) {
+//    }
+//
+//    void listen(uint8_t address) override;
+//
+//    void listen(uint8_t first_address, uint8_t second_address) override;
+//
+//    void listen_range(uint8_t first_address, uint8_t last_address) override;
+//
+//    void stop_listening() override;
+//
+//    // Call this to reset the slave when it ignores a new I2C transaction
+//    // because it's stuck waiting for the master to acknowledge a transmit.
+//    // (SBF flag is high and no interrupts are triggered.)
+//    void reset() {
+//        // Clear the slave's buffers and reset the internal state
+//        port->SCR = (LPI2C_SCR_RRF | LPI2C_SCR_RTF);
+//        state = State::idle;
+//        _error = I2CError::ok;
+//        port->SCR = LPI2C_SCR_SEN;
+//    }
+//
+//    void after_receive(std::function<void(size_t length, uint16_t address)> callback) override;
+//
+//    void before_transmit(std::function<void(uint16_t address)> callback) override;
+//
+//    void after_transmit(std::function<void(uint16_t address)> callback) override;
+//
+//    void set_transmit_buffer(uint8_t* buffer, size_t size) override;
+//
+//    void set_receive_buffer(uint8_t* buffer, size_t size) override;
+//
+//    void _interrupt_service_routine();
+//
+//private:
+//    enum class State {
+//        // Busy states
+//               receiving = 0,  // Receiving bytes from the master
+//               transmitting,   // Transmitting bytes to the master
+//
+//               // 'idle' and above mean that the driver has finished
+//               // whatever it was doing and is ready to do more work.
+//               idle = 100,     // Not in a transaction
+//               aborted,        // Transaction was aborted due to an error.
+//    };
+//
+//    IMXRT_LPI2C_Registers* const port;
+//    IMX_RT1060_I2CBase::Config& config;
+//    volatile State state = State::idle;
+//    volatile uint16_t address_called = 0;
+//
+//    I2CBuffer rx_buffer = I2CBuffer();
+//    I2CBuffer tx_buffer = I2CBuffer();
+//    bool trailing_byte_sent = false;
+//
+//    void (* isr)();
+//    std::function<void(size_t length, uint16_t address)> after_receive_callback = nullptr;
+//    std::function<void(uint16_t address)> before_transmit_callback = nullptr;
+//    std::function<void(uint16_t address)> after_transmit_callback = nullptr;
+//
+//    void listen(uint32_t samr, uint32_t address_config);
+//
+//    // Called from within the ISR when we receive a Repeated START or STOP
+//    void end_of_frame();
+//};
 
-    void listen(uint8_t address) override;
-
-    void listen(uint8_t first_address, uint8_t second_address) override;
-
-    void listen_range(uint8_t first_address, uint8_t last_address) override;
-
-    void stop_listening() override;
-
-    // Call this to reset the slave when it ignores a new I2C transaction
-    // because it's stuck waiting for the master to acknowledge a transmit.
-    // (SBF flag is high and no interrupts are triggered.)
-    void reset() {
-        // Clear the slave's buffers and reset the internal state
-        port->SCR = (LPI2C_SCR_RRF | LPI2C_SCR_RTF);
-        state = State::idle;
-        _error = I2CError::ok;
-        port->SCR = LPI2C_SCR_SEN;
-    }
-
-    void after_receive(std::function<void(size_t length, uint16_t address)> callback) override;
-
-    void before_transmit(std::function<void(uint16_t address)> callback) override;
-
-    void after_transmit(std::function<void(uint16_t address)> callback) override;
-
-    void set_transmit_buffer(uint8_t* buffer, size_t size) override;
-
-    void set_receive_buffer(uint8_t* buffer, size_t size) override;
-
-    void _interrupt_service_routine();
-
-private:
-    enum class State {
-        // Busy states
-               receiving = 0,  // Receiving bytes from the master
-               transmitting,   // Transmitting bytes to the master
-
-               // 'idle' and above mean that the driver has finished
-               // whatever it was doing and is ready to do more work.
-               idle = 100,     // Not in a transaction
-               aborted,        // Transaction was aborted due to an error.
-    };
-
-    IMXRT_LPI2C_Registers* const port;
-    IMX_RT1060_I2CBase::Config& config;
-    volatile State state = State::idle;
-    volatile uint16_t address_called = 0;
-
-    I2CBuffer rx_buffer = I2CBuffer();
-    I2CBuffer tx_buffer = I2CBuffer();
-    bool trailing_byte_sent = false;
-
-    void (* isr)();
-    std::function<void(size_t length, uint16_t address)> after_receive_callback = nullptr;
-    std::function<void(uint16_t address)> before_transmit_callback = nullptr;
-    std::function<void(uint16_t address)> after_transmit_callback = nullptr;
-
-    void listen(uint32_t samr, uint32_t address_config);
-
-    // Called from within the ISR when we receive a Repeated START or STOP
-    void end_of_frame();
-};
-
-extern IMX_RT1060_I2CSlave Slave;   // Pins 19 and 18; SCL0 and SDA0
-extern IMX_RT1060_I2CSlave Slave1;  // Pins 16 and 17; SCL1 and SDA1
-extern IMX_RT1060_I2CSlave Slave2;  // Pins 24 and 25; SCL2 and SDA2
+//extern IMX_RT1060_I2CSlave Slave;   // Pins 19 and 18; SCL0 and SDA0
+//extern IMX_RT1060_I2CSlave Slave1;  // Pins 16 and 17; SCL1 and SDA1
+//extern IMX_RT1060_I2CSlave Slave2;  // Pins 24 and 25; SCL2 and SDA2
 
 #endif //IMX_RT1060_I2C_DRIVER_H

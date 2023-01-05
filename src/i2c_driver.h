@@ -120,55 +120,55 @@ public:
 
 
 
-class I2CSlave : public I2CDriver {
-public:
-    // Start listening to the master on the given address. Makes the slave visible on the bus.
-    virtual void listen(uint8_t address) = 0;
-
-    // Like listen(uint8_t) except that the slave will listen on 2 different I2C addresses.
-    // This makes it appear as 2 devices to the master.
-    virtual void listen(uint8_t first_address, uint8_t second_address) = 0;
-
-    // Like listen(uint8_t) except that the slave will listen on every address
-    // in the range first_address to last_address inclusive.
-    virtual void listen_range(uint8_t first_address, uint8_t last_address) = 0;
-
-    // Sets a callback to be called by the ISR each time
-    // the slave receives a block of data from the master.
-    // 'length' is the number of bytes that were received by the slave
-    // 'address' is the address that the master called. This is only
-    // useful when the slave is listening on multiple addresses.
-    virtual void after_receive(std::function<void(size_t length, uint16_t address)> callback) = 0;
-
-    // Detach from the bus. The slave will no longer be visible to the master.
-    // Does nothing unless the slave is listening.
-    virtual void stop_listening() = 0;
-
-    // Sets a callback to be called by the ISR just before
-    // the slave transmits a block of data to the master.
-    // 'address' is the address that the master called. This is only
-    // useful when the slave is listening on multiple addresses.
-    virtual void before_transmit(std::function<void(uint16_t address)> callback) = 0;
-
-    // Sets a callback to be called by the ISR each time
-    // each time the slave has sent a block of data to the master.
-    // 'address' is the address that the master called. This is only
-    // useful when the slave is listening on multiple addresses.
-    virtual void after_transmit(std::function<void(uint16_t address)> callback) = 0;
-
-    // Determines which data will be sent to the master the next time
-    // it reads from us.
-    // The master will receive up to 'numBytes' from us. If it demands
-    // more data it will be sent 0xFF until it ends the request.
-    // The call to onTransmit gives the actual number of bytes transmitted.
-    virtual void set_transmit_buffer(uint8_t* buffer, size_t size) = 0;
-
-    // Determines where to put data we receive from the the master
-    // the next it writes to us.
-    // The master can send up to 'numBytes' of data to us. Extra bytes
-    // will be dropped. The call to onReceive gives the actual number
-    // of bytes received.
-    virtual void set_receive_buffer(uint8_t* buffer, size_t size) = 0;
-};
+//class I2CSlave : public I2CDriver {
+//public:
+//    // Start listening to the master on the given address. Makes the slave visible on the bus.
+//    virtual void listen(uint8_t address) = 0;
+//
+//    // Like listen(uint8_t) except that the slave will listen on 2 different I2C addresses.
+//    // This makes it appear as 2 devices to the master.
+//    virtual void listen(uint8_t first_address, uint8_t second_address) = 0;
+//
+//    // Like listen(uint8_t) except that the slave will listen on every address
+//    // in the range first_address to last_address inclusive.
+//    virtual void listen_range(uint8_t first_address, uint8_t last_address) = 0;
+//
+//    // Sets a callback to be called by the ISR each time
+//    // the slave receives a block of data from the master.
+//    // 'length' is the number of bytes that were received by the slave
+//    // 'address' is the address that the master called. This is only
+//    // useful when the slave is listening on multiple addresses.
+//    virtual void after_receive(std::function<void(size_t length, uint16_t address)> callback) = 0;
+//
+//    // Detach from the bus. The slave will no longer be visible to the master.
+//    // Does nothing unless the slave is listening.
+//    virtual void stop_listening() = 0;
+//
+//    // Sets a callback to be called by the ISR just before
+//    // the slave transmits a block of data to the master.
+//    // 'address' is the address that the master called. This is only
+//    // useful when the slave is listening on multiple addresses.
+//    virtual void before_transmit(std::function<void(uint16_t address)> callback) = 0;
+//
+//    // Sets a callback to be called by the ISR each time
+//    // each time the slave has sent a block of data to the master.
+//    // 'address' is the address that the master called. This is only
+//    // useful when the slave is listening on multiple addresses.
+//    virtual void after_transmit(std::function<void(uint16_t address)> callback) = 0;
+//
+//    // Determines which data will be sent to the master the next time
+//    // it reads from us.
+//    // The master will receive up to 'numBytes' from us. If it demands
+//    // more data it will be sent 0xFF until it ends the request.
+//    // The call to onTransmit gives the actual number of bytes transmitted.
+//    virtual void set_transmit_buffer(uint8_t* buffer, size_t size) = 0;
+//
+//    // Determines where to put data we receive from the the master
+//    // the next it writes to us.
+//    // The master can send up to 'numBytes' of data to us. Extra bytes
+//    // will be dropped. The call to onReceive gives the actual number
+//    // of bytes received.
+//    virtual void set_receive_buffer(uint8_t* buffer, size_t size) = 0;
+//};
 
 #endif //I2C_DRIVER_H
